@@ -1,4 +1,4 @@
-from github import Auth, Github
+from github import Auth, Github, BadCredentialsException
 from git import Repo
 from secret_files import gh_creds
 
@@ -20,7 +20,12 @@ def get_repo_data():
     return repo_list
 
 def main():
-    repo_list = get_repo_data()
+    try:
+        repo_list = get_repo_data()
+    except BadCredentialsException:
+        print("Invalid credentials. Aborting.")
+        quit()
+
     for repository in repo_list:
         Repo.clone_from(f"{gh_url}{repository['full_name']}", f"./backup/{repository['user']}/{repository['name']}_{repository['head_commit']}")
         print(f"{repository['name']} - {repository['default_branch']} - {repository['head_commit']}")

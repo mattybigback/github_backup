@@ -1,5 +1,5 @@
 from github import Auth, Github, BadCredentialsException
-from git import Repo
+from git import Repo, GitCommandError
 from secret_files import gh_creds
 from datetime import datetime
 import os
@@ -26,16 +26,15 @@ def get_repo_data():
     return repo_list
 
 def delete_folder_contents(folder_path):
-    # Check if the folder exists
+    # Check if the folder exists and handle
     if not os.path.exists(folder_path):
-        print("The folder does not exist.")
         return
     
     # List all the entries in the folder
     for entry in os.listdir(folder_path):
         entry_path = os.path.join(folder_path, entry)
         
-        # Check if the entry is a file or a directory
+        # Check if path is a file or a directory and handle
         if os.path.isfile(entry_path):
             os.remove(entry_path)  # Delete the file
         elif os.path.isdir(entry_path):
@@ -54,11 +53,13 @@ def main():
 
     for repository in repo_list:
         repo_folder_name = f"{repository['name']}_{repository['head_commit']}"
-        repo_folder_path = f"{backup_temp_path}{repository['user']}/"
-        
-        Repo.clone_from(f"{gh_url}{repository['full_name']}", f"{backup_temp_path}{repository['user']}/{repo_folder_name}")
+        try:
+            Repo.clone_from(f"{gh_url}{repository['full_name']}", f"{backup_temp_path}{repository['user']}/{repo_folder_name}")
+        except GitCommandError:
+            print(f"Error cloning repo {repository['name']}. Aborting.")
+            delete_folder_contents(backup_temp_path)
+            quit()
         print(f"{repository['name']} - {repository['default_branch']} - {repository['head_commit']}")
-        #shutil.make_archive(f"{backup_zip_path}{folder_timestamp}/{repository['user']}/{repo_folder_name}", 'zip', f"{repo_folder_path}{repo_folder_name}")
     shutil.make_archive(f"{backup_zip_path}MFT_Github_Backup_{folder_timestamp}", 'zip', backup_temp_path)
     delete_folder_contents(backup_temp_path)
 main()

@@ -4,6 +4,7 @@ from secret_files import gh_creds
 from datetime import datetime
 import os
 import shutil
+import time
 
 backup_temp_path = "./temp/"
 backup_zip_path = "./backup_zips/"
@@ -53,13 +54,26 @@ def main():
 
     for repository in repo_list:
         repo_folder_name = f"{repository['name']}_{repository['head_commit']}"
-        try:
-            Repo.clone_from(f"{gh_url}{repository['full_name']}", f"{backup_temp_path}{repository['user']}/{repo_folder_name}")
-        except GitCommandError:
-            print(f"Error cloning repo {repository['name']}. Aborting.")
-            delete_folder_contents(backup_temp_path)
-            quit()
-        print(f"{repository['name']} - {repository['default_branch']} - {repository['head_commit']}")
+        retries = 0
+        max_retries = 10  # Maximum number of retries
+        retry_delay = 10  # Delay between retries in seconds
+        
+        while retries < max_retries:
+            try:
+                Repo.clone_from(f"{gh_url}{repository['full_name']}", f"{backup_temp_path}{repository['user']}/{repo_folder_name}")
+                print(f"Successfully cloned {repository['name']} - {repository['default_branch']} - {repository['head_commit']}")
+                break  # Exit the retry loop on success
+            except GitCommandError as e:
+                print(f"Error cloning repository {repository['name']}. Attempt {retries + 1} of {max_retries}.")
+                retries += 1
+                if retries < max_retries:
+                    time.sleep(retry_delay)  # Wait a bit before retrying
+                else:
+                    print(f"Failed to clone repo {repository['name']} after {max_retries} attempts. Aborting.")
+                    delete_folder_contents(backup_temp_path)
+                    quit()
+    
     shutil.make_archive(f"{backup_zip_path}MFT_Github_Backup_{folder_timestamp}", 'zip', backup_temp_path)
     delete_folder_contents(backup_temp_path)
+
 main()

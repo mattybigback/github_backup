@@ -87,7 +87,7 @@ def main():
         retry_delay = 10  # Delay between retries in seconds
 
         while retries < max_retries:
-            print(f"Cloning repo {repository['full_name']}...", end="")
+            print(f"Cloning repo {repository['full_name']}...", end="", flush=True)
             try:
                 Repo.clone_from(f"{gh_url}{repository['full_name']}", f"{BACKUP_TEMP_PATH}/{repository['user']}/{repo_folder_name}")
                 print(f"Success! {repository['default_branch']} - {repository['head_commit']}")
@@ -102,7 +102,7 @@ def main():
                     delete_folder_contents(BACKUP_TEMP_PATH)
                     sys.exit()
 
-    print("Creating archive...", end="")
+    print("Creating archive...", end="", flush=True)
     try:
         shutil.make_archive(f"{BACKUP_ZIP_PATH}/MFT_Github_Backup_{folder_timestamp}", 'zip', BACKUP_TEMP_PATH)
     except:

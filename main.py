@@ -15,7 +15,7 @@ GITHUBN_PK_FILE = "./secret_files/gh_pk.pem"
 
 def get_github_app_private_key() -> str:
     """Read the GitHub App private key from a PEM file."""
-    with open(GITHUBN_PK_FILE, "r") as pk_file:
+    with open(GITHUBN_PK_FILE, "r", encoding="UTF8") as pk_file:
         return pk_file.read()
 
 def generate_app_jwt() -> str:
@@ -62,6 +62,9 @@ def get_installation_token() -> str:
     return token
 
 def github_headers(token: str) -> dict:
+    """
+    Creates a correctly formatted header for the github API
+    """
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -135,7 +138,7 @@ def build_clone_url(token: str, full_name: str) -> str:
     Build an HTTPS URL suitable for cloning with a GitHub App installation token.
     """
     # Using x-access-token as the username is the recommended pattern for app tokens.
-    # https://github.com/orgs/community/discussions/48186  (and related docs) :contentReference[oaicite:8]{index=8}
+
     return f"https://x-access-token:{token}@github.com/{full_name}"
 
 
@@ -157,6 +160,9 @@ def delete_folder_contents(folder_path):
     print("Folder contents deleted.")
 
 def main():
+    """
+    Get a list of github repos, clone them into a temporary location and then create a zip file.
+    """
     folder_timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     delete_folder_contents(BACKUP_TEMP_PATH)
     repo_list, token = get_repo_data()

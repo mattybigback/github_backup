@@ -1,22 +1,41 @@
 import os
 import shutil
-import time
 import sys
+import time
 from datetime import datetime
+import structlog
 import requests
 import jwt
 from git import Repo, GitCommandError
-from secret_files import gh_creds
+from envconfig import read_secret, ConfigError
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()
+    ]
+)
+logger = structlog.getLogger(__name__)
+
+
+try:
+    GITHUB_APP_ID = read_secret("GITHUB_APP_ID", required=True)
+    GITHUB_INSTALLATION_ID = read_secret(
+        "GITHUB_INSTALLATION_ID", required=True)
+    GITHUB_PK = read_secret("GITHUB_PK", required=True)
+    GH_ARCHIVE_ZIP_PATH = read_secret(
+        "GH_ARCHIVE_ZIP_PATH", default="./backup_zips")
+    GH_ARCHIVE_ZIP_PREFIX = read_secret(
+        "GH_ARCHIVE_ZIP_PREFIX", default="Github_Backup_")
+except ConfigError as e:
+    logger.error(f"Configuration error: {e}")
+    sys.exit(1)
 
 BACKUP_TEMP_PATH = "./temp"
 BACKUP_ZIP_PATH = "./backup_zips"
 GITHUB_API_URL = "https://api.github.com"
-GITHUBN_PK_FILE = "./secret_files/gh_pk.pem"
 
-def get_github_app_private_key() -> str:
-    """Read the GitHub App private key from a PEM file."""
-    with open(GITHUBN_PK_FILE, "r", encoding="UTF8") as pk_file:
-        return pk_file.read()
 
 def generate_app_jwt() -> str:
     """
@@ -24,14 +43,26 @@ def generate_app_jwt() -> str:
     """
     now = int(time.time())
     payload = {
-        "iat": now - 60,               # issued at (a little in the past to allow for clock skew)
+        # issued at (a little in the past to allow for clock skew)
+        "iat": now - 60,
         "exp": now + (10 * 60),        # max 10 minutes for GitHub app JWTs
-        "iss": gh_creds.GITHUB_APP_ID,          # GitHub App ID
+        "iss": GITHUB_APP_ID,          # GitHub App ID
     }
 
-    encoded = jwt.encode(payload, get_github_app_private_key(), algorithm="RS256")
+    try:
+        encoded = jwt.encode(payload, GITHUB_PK, algorithm="RS256")
+    except jwt.exceptions.InvalidKeyError as e:
+        logger.error(f"Error generating JWT: {e}")
+        return None
+    except ValueError as e:
+        logger.error(f"Error generating JWT: {e}")
+        return None
+    except AttributeError as e:
+        logger.error(f"Unexpected error generating JWT: {e}")
+        return None
     # PyJWT may return bytes or str depending on version; normalize to str
     return encoded if isinstance(encoded, str) else encoded.decode("utf-8")
+
 
 def get_installation_token() -> str:
     """
@@ -39,7 +70,10 @@ def get_installation_token() -> str:
 
     This token is what we use to call the GitHub API AND to git-clone via HTTPS.
     """
+
     jwt_token = generate_app_jwt()
+    if jwt_token is None:
+        return None
 
     headers = {
         "Authorization": f"Bearer {jwt_token}",
@@ -47,19 +81,20 @@ def get_installation_token() -> str:
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
-    url = f"{GITHUB_API_URL}/app/installations/{gh_creds.GITHUB_INSTALLATION_ID}/access_tokens"
+    url = f"{GITHUB_API_URL}/app/installations/{GITHUB_INSTALLATION_ID}/access_tokens"
     try:
         resp = requests.post(url, headers=headers, timeout=10)
         resp.raise_for_status()
     except requests.exceptions.RequestException as e:
-        print(f"Error getting installation token: {e}")
+        logger.error(f"Error getting installation token: {e}")
         sys.exit(1)
 
     data = resp.json()
     token = data["token"]
     expires_at = data["expires_at"]
-    print(f"\nGot installation token (expires at {expires_at})")
+    logger.info(f"Got installation token (expires at {expires_at})")
     return token
+
 
 def github_headers(token: str) -> dict:
     """
@@ -72,15 +107,13 @@ def github_headers(token: str) -> dict:
     }
 
 
-
-def get_repo_data():
+def get_repo_data(token: str) -> list[dict]:
     """
     Get list of repositories accessible to this app installation, including
     default branch and short head commit SHA.
     """
-    print("Connecting to GitHub API...", end="", flush=True)
+    logger.info("Attempting to connect to GitHub API")
 
-    token = get_installation_token()
     headers = github_headers(token)
 
     repo_list = []
@@ -90,7 +123,7 @@ def get_repo_data():
         while url:
             resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code == 401:
-                print("\nInvalid GitHub App credentials. Aborting.")
+                logger.error("\nInvalid GitHub App credentials. Aborting.")
                 sys.exit(1)
             resp.raise_for_status()
 
@@ -104,7 +137,8 @@ def get_repo_data():
 
                 # Get latest commit on default branch
                 branch_url = f"{GITHUB_API_URL}/repos/{owner}/{name}/branches/{default_branch}"
-                branch_resp = requests.get(branch_url, headers=headers, timeout=10)
+                branch_resp = requests.get(
+                    branch_url, headers=headers, timeout=10)
                 branch_resp.raise_for_status()
                 branch_data = branch_resp.json()
                 commit_sha = branch_data["commit"]["sha"][:7]
@@ -117,21 +151,23 @@ def get_repo_data():
                     "head_commit": commit_sha,
                 }
                 repo_list.append(repo_data)
-                print(f"\nRepo found...{full_name}")
+                logger.info(
+                    f"Found repository: {full_name} ({default_branch} - {commit_sha})")
 
             # Pagination
             url = resp.links.get("next", {}).get("url")
 
     except requests.exceptions.RequestException as e:
-        print(f"\nConnection error. Aborting. ({e})")
+        logger.error(f"\nConnection error. Aborting. ({e})")
         sys.exit(1)
 
     if not repo_list:
-        print("\nNo repos found for this app installation.")
+        logger.warning("\nNo repos found for this app installation.")
         sys.exit(1)
 
-    print("\nSuccess!")
-    return repo_list, token
+    logger.info(f"Total repositories to back up: {len(repo_list)}")
+    return repo_list
+
 
 def build_clone_url(token: str, full_name: str) -> str:
     """
@@ -146,26 +182,38 @@ def delete_folder_contents(folder_path):
     '''Delete all files from temp directory'''
     # Check if the folder exists and handle
     if not os.path.exists(folder_path):
-        return
+        logger.info(
+            f"Folder {folder_path} does not exist. No contents to delete.")
 
     # List all the entries in the folder
     for entry in os.listdir(folder_path):
         entry_path = os.path.join(folder_path, entry)
-        # Check if path is a file or a directory and handle
-        if os.path.isfile(entry_path):
-            os.remove(entry_path)  # Delete the file
-        elif os.path.isdir(entry_path):
-            shutil.rmtree(entry_path)  # Delete the directory and all its contents
+        try:
+            # Check if path is a file or a directory and handle
+            if os.path.isfile(entry_path):
+                os.remove(entry_path)  # Delete the file
+                logger.info(f"Deleted file {entry_path}")
+            elif os.path.isdir(entry_path):
+                # Delete the directory and all its contents
+                shutil.rmtree(entry_path)
+                logger.info(f"Deleted directory {entry_path}")
+        except PermissionError as e:
+            logger.warning(f"Could not delete locked path {entry_path}: {e}")
+        except OSError as e:
+            logger.warning(f"Could not delete path {entry_path}: {e}")
 
-    print("Folder contents deleted.")
 
 def main():
     """
     Get a list of github repos, clone them into a temporary location and then create a zip file.
     """
+    logger.info("Starting GitHub backup process.")
     folder_timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     delete_folder_contents(BACKUP_TEMP_PATH)
-    repo_list, token = get_repo_data()
+    token = get_installation_token()
+    if token is None:
+        sys.exit(1)
+    repo_list = get_repo_data(token)
     for repository in repo_list:
         repo_folder_name = f"{repository['name']}_{repository['head_commit']}"
         dest_path = f"{BACKUP_TEMP_PATH}/{repository['user']}/{repo_folder_name}"
@@ -176,33 +224,37 @@ def main():
         retry_delay = 10  # Delay between retries in seconds
 
         while retries < max_retries:
-            print(f"Cloning repo {repository['full_name']}...", end="", flush=True)
+            logger.info(f"Cloning repo {repository['name']} to {dest_path}")
             try:
                 Repo.clone_from(clone_url, dest_path)
-                print(f"Success! {repository['default_branch']} - {repository['head_commit']}")
+                logger.info(f"Successfully cloned {repository['name']}")
                 break  # Exit the retry loop on success
             except GitCommandError as e:
                 retries += 1
-                print(f" Failed. Attempt {retries} of {max_retries}. ({e})")
+                logger.warning(
+                    f"Failed to clone repo {repository['name']}. Attempt {retries} of {max_retries}. ({e})")
 
                 if retries < max_retries:
                     time.sleep(retry_delay)  # Wait a bit before retrying
                 else:
-                    print(f"Failed to clone repo {repository['name']} after {max_retries} attempts. Aborting.")
+                    logger.error(
+                        f"Failed to clone repo {repository['name']} after {max_retries} attempts. Aborting.")
                     delete_folder_contents(BACKUP_TEMP_PATH)
                     sys.exit()
 
-    print("Creating archive...", end="", flush=True)
+    logger.info(f"Creating archive at {BACKUP_ZIP_PATH}")
     try:
         shutil.make_archive(
-            f"{BACKUP_ZIP_PATH}/MFT_Github_Backup_{folder_timestamp}",
+            f"{BACKUP_ZIP_PATH}/{GH_ARCHIVE_ZIP_PREFIX}{folder_timestamp}",
             'zip',
             BACKUP_TEMP_PATH)
     except Exception as e:
-        print(f"\nFailure. Could not create archive: {e}")
+        logger.error(f"\nFailure. Could not create archive: {e}")
         sys.exit(1)
-    print("Success!")
+    logger.info(
+        f"Backup archive created at {BACKUP_ZIP_PATH}/{GH_ARCHIVE_ZIP_PREFIX}{folder_timestamp}.zip")
     delete_folder_contents(BACKUP_TEMP_PATH)
+
 
 if __name__ == "__main__":
     main()

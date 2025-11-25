@@ -1,5 +1,8 @@
-.venv
+.venv/
+__pycache__/
+logs/
 secret_files/*
 !secret_files/.placeholder
 temp
 backup_zips
+.env

@@ -2,13 +2,16 @@ certifi==2025.11.12
 cffi==2.0.0
 charset-normalizer==3.4.4
 cryptography==46.0.3
+dotenv==0.9.9
 gitdb==4.0.12
 GitPython==3.1.45
 idna==3.11
 packaging==25.0
 pycparser==2.23
 PyJWT==2.10.1
+python-dotenv==1.2.1
 requests==2.32.5
 smmap==5.0.2
+structlog==25.5.0
 typing_extensions==4.15.0
 urllib3==2.5.0

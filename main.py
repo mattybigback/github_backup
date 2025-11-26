@@ -63,7 +63,7 @@ try:
         "GH_ARCHIVE_ZIP_PATH", default="./backup_zips")
     GH_ARCHIVE_ZIP_PREFIX = read_secret(
         "GH_ARCHIVE_ZIP_PREFIX", default="Github_Backup_")
-    NO_COLOR = read_secret ("NO_COLOR", default=None)
+    NO_COLOR = read_secret("NO_COLOR", default=None)
 except ConfigError as e:
     logger.error(f"Configuration error: {e}")
     sys.exit(1)

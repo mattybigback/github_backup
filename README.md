@@ -25,6 +25,7 @@ This means you can either set values directly as environment variables or point 
 | `GITHUB_PK`               | `GITHUB_PK_FILE`              | Yes      | —               | PEM-encoded private key for the GitHub App, used to sign JWTs. |
 | `GH_ARCHIVE_ZIP_PATH`     | `GH_ARCHIVE_ZIP_PATH_FILE`    | No       | `./backup_zips` | Directory where generated backup ZIP archives are stored. |
 | `GH_ARCHIVE_ZIP_PREFIX`   | `GH_ARCHIVE_ZIP_PREFIX_FILE`  | No       | `Github_Backup_`| Filename prefix for generated backup archives. |
+| `NO_COLOR`                | —                             | No       | —               | If set, disables ANSI colors in console output. |
 
 An example .env file is provided.
 

@@ -103,7 +103,7 @@ def generate_app_jwt() -> str:
     return encoded if isinstance(encoded, str) else encoded.decode("utf-8")
 
 
-def get_installation_token() -> str:
+def get_installation_token() -> str | None:
     """
     Exchange the app JWT for an installation access token.
 

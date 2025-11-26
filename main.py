@@ -223,6 +223,7 @@ def delete_folder_contents(folder_path):
     if not os.path.exists(folder_path):
         logger.info(
             f"Folder {folder_path} does not exist. No contents to delete.")
+        return
 
     # List all the entries in the folder
     for entry in os.listdir(folder_path):

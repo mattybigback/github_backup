@@ -1,5 +1,5 @@
 # Github Local Backup
-Creates a local backup of all rewpositories in a Github account.
+Creates a local backup of all repositories in a Github account.
 
 ## Requirements
 A requirements.txt file is provided for use with pip.

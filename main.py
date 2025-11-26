@@ -2,6 +2,8 @@ import os
 import shutil
 import sys
 import time
+import logging
+from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 import structlog
 import requests
@@ -9,15 +11,48 @@ import jwt
 from git import Repo, GitCommandError
 from envconfig import read_secret, ConfigError
 
+
+os.makedirs("./logs", exist_ok=True)
+log_handler_json = TimedRotatingFileHandler(
+    "./logs/github_backup.log",
+    when="midnight",
+    interval=1,
+    utc=True)
+log_handler_console = logging.StreamHandler(sys.stderr)
+
+log_handler_console.setFormatter(
+    structlog.stdlib.ProcessorFormatter(
+        processor=structlog.dev.ConsoleRenderer(colors=False)
+    )
+)
+
+log_handler_json.setFormatter(
+    structlog.stdlib.ProcessorFormatter(
+        processor=structlog.processors.JSONRenderer(),
+    )
+)
+
+root = logging.getLogger()
+root.setLevel(logging.INFO)
+root.addHandler(log_handler_json)
+root.addHandler(log_handler_console)
+
 structlog.configure(
     processors=[
+        structlog.stdlib.filter_by_level,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer()
-    ]
+        structlog.processors.EventRenamer("msg"),
+        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+    ],
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
 )
 logger = structlog.getLogger(__name__)
 
+BACKUP_TEMP_PATH = "./temp"
+BACKUP_ZIP_PATH = "./backup_zips"
+GITHUB_API_URL = "https://api.github.com"
 
 try:
     GITHUB_APP_ID = read_secret("GITHUB_APP_ID", required=True)
@@ -28,14 +63,18 @@ try:
         "GH_ARCHIVE_ZIP_PATH", default="./backup_zips")
     GH_ARCHIVE_ZIP_PREFIX = read_secret(
         "GH_ARCHIVE_ZIP_PREFIX", default="Github_Backup_")
+    NO_COLOR = read_secret ("NO_COLOR", default=None)
 except ConfigError as e:
     logger.error(f"Configuration error: {e}")
     sys.exit(1)
 
-BACKUP_TEMP_PATH = "./temp"
-BACKUP_ZIP_PATH = "./backup_zips"
-GITHUB_API_URL = "https://api.github.com"
+ansi_color = False if NO_COLOR is not None else True
 
+log_handler_console.setFormatter(
+    structlog.stdlib.ProcessorFormatter(
+        processor=structlog.dev.ConsoleRenderer(colors=ansi_color)
+    )
+)
 
 def generate_app_jwt() -> str:
     """
@@ -254,6 +293,7 @@ def main():
     logger.info(
         f"Backup archive created at {BACKUP_ZIP_PATH}/{GH_ARCHIVE_ZIP_PREFIX}{folder_timestamp}.zip")
     delete_folder_contents(BACKUP_TEMP_PATH)
+    logger.info("GitHub backup process completed successfully.")
 
 
 if __name__ == "__main__":

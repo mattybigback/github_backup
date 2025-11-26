@@ -201,7 +201,7 @@ def get_repo_data(token: str) -> list[dict]:
         sys.exit(1)
 
     if not repo_list:
-        logger.warning("\nNo repos found for this app installation.")
+        logger.warning("No repos found for this app installation.")
         sys.exit(1)
 
     logger.info(f"Total repositories to back up: {len(repo_list)}")

@@ -162,7 +162,7 @@ def get_repo_data(token: str) -> list[dict]:
         while url:
             resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code == 401:
-                logger.error("\nInvalid GitHub App credentials. Aborting.")
+                logger.error("Invalid GitHub App credentials. Aborting.")
                 sys.exit(1)
             resp.raise_for_status()
 

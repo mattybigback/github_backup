@@ -197,7 +197,7 @@ def get_repo_data(token: str) -> list[dict]:
             url = resp.links.get("next", {}).get("url")
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"\nConnection error. Aborting. ({e})")
+        logger.error(f"Connection error. Aborting. ({e})")
         sys.exit(1)
 
     if not repo_list:

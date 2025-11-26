@@ -126,7 +126,7 @@ def get_installation_token() -> str:
         resp.raise_for_status()
     except requests.exceptions.RequestException as e:
         logger.error(f"Error getting installation token: {e}")
-        sys.exit(1)
+        return None
 
     data = resp.json()
     token = data["token"]
